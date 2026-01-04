@@ -1,1 +1,1 @@
-![](./App Architecture.jpg)
+![](./App_Architecture.jpg)
