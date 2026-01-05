@@ -4,6 +4,7 @@ import httpx
 import logging
 from typing import Any, Dict, List, Optional
 from app.config.settings import settings
+import requests
 
 logger = logging.getLogger("tanmiya.services.directus")
 
@@ -17,6 +18,10 @@ def _headers() -> Dict[str, str]:
         "Authorization": f"Bearer {settings.DIRECTUS_TOKEN}"
     }
 
+# _headers = {
+#         "Content-Type": "application/json",
+#         "Authorization": f"Bearer {settings.DIRECTUS_TOKEN}"
+#     }
 
 # ------------------------------------------------
 # 2. Generic HTTP helpers
@@ -24,7 +29,7 @@ def _headers() -> Dict[str, str]:
 async def _get(path: str) -> Any:
     url = f"{settings.DIRECTUS_URL}{path}"
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient() as client:
             resp = await client.get(url, headers=_headers())
             resp.raise_for_status()
             return resp.json()
@@ -36,7 +41,7 @@ async def _get(path: str) -> Any:
 async def _post(path: str, payload: dict) -> Any:
     url = f"{settings.DIRECTUS_URL}{path}"
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient() as client:
             resp = await client.post(url, json=payload, headers=_headers())
             resp.raise_for_status()
             return resp.json()
@@ -152,33 +157,88 @@ async def post_item(collection_name: str, payload: dict):
 # ------------------------------------------------
 
 async def get_all_leaderboard_items() -> List[dict]:
-    resp = await _get("/items/Leaderboard_all?limit=500")
+    resp = await _get("/items/Leaderboard_all?limit=-1")
     return resp.get("data", [])
 
 
 async def upsert_leaderboard(items: List[dict]):
     """
-    Accepts list of region results and inserts them into:
-    - Leaderboard (monthly snapshot)
-    - Leaderboard_all (historical series)
+    UPSERT into:
+      - Leaderboard        (latest snapshot for region)
+      - Leaderboard_all    (historical archive, always append)
     """
-    for item in items:
-        await _post("/items/Leaderboard", item)
-        await _post("/items/Leaderboard_all", item)
+    # Check is there any existing items in Leaderboard
+    existing = await _get(f"/items/Leaderboard")
+    existing_items = existing.get("data", [])
 
+    if existing_items:
+
+        # Found → PATCH the record
+        for item in items:
+            # Check if there is data exist for the same Region_id in the server
+            existing_item = next((e for e in existing_items if e.get("Region_id") == item.get("Region_id")),None)
+
+            if existing_item:
+                await _patch(f"/items/Leaderboard/{existing_item['id']}", item)
+            else:
+                await _post("/items/Leaderboard", item)
+    else:
+        # No Data found → POST all items as new record
+        for item in items:
+            await _post("/items/Leaderboard", item)
+
+        # ---------------------------
+        # 2. ALWAYS APPEND to Leaderboard_all
+        # (historical records should NOT be overwritten)
+        # ---------------------------
+        for item in items:
+            await _post("/items/Leaderboard_all", item)
+
+
+
+# async def upsert_predictions(predictions: List[dict]):
+#     for p in predictions:
+#         await _post("/items/Leaderboard_predict", p)
 
 async def upsert_predictions(predictions: List[dict]):
-    for p in predictions:
-        await _post("/items/Leaderboard_predict", p)
+    """
+    UPSERT into Leaderboard_predict:
+    - If Region exists → PATCH
+    - Else → POST
+    """
+    # Check is there any existing items in Leaderboard
+        # if exist
+            # Patch the data with same data "id" in the server records (Since :id" is auto generated while saving data in the server side)
+        # else
+            # Post all data as new record
+
+    existing = await _get(f"/items/Leaderboard_predict")
+    existing_items = existing.get("data", [])
+
+    if existing_items:
+
+        # Found → PATCH the record
+        for item in predictions:
+            # Check if there is data exist for the same Region_id in the server
+            existing_item = next((e for e in existing_items if e.get("Region_id") == item.get("Region_id")),None)
+
+            if existing_item:
+                await _patch(f"/items/Leaderboard_predict/{existing_item['id']}", item)
+            else:
+                await _post("/items/Leaderboard_predict", item)
+    else:
+        # No Data found → POST all items as new record
+        for item in predictions:
+            await _post("/items/Leaderboard_predict", item)
 
 
 async def get_leaderboard_latest() -> List[dict]:
-    resp = await _get("/items/Leaderboard?limit=50")
+    resp = await _get("/items/Leaderboard")
     return resp.get("data", [])
 
 
 async def get_leaderboard_predictions() -> List[dict]:
-    resp = await _get("/items/Leaderboard_predict?limit=50")
+    resp = await _get("/items/Leaderboard_predict")
     return resp.get("data", [])
 
 

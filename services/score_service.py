@@ -15,8 +15,9 @@ import logging
 from app.utils.translator import translator  # to be implemented (wrapper for local translator)
 from sentence_transformers import CrossEncoder  # heavy; ensure installed where used
 import asyncio
-from app.constants.regions import REGIONS
+# from app.constants.regions import REGIONS
 from app.utils import http_client
+from app.constants.regions import GOVERNORATE_FROM_REGION_ID
 
 logger = logging.getLogger("tanmiya.services.score")
 
@@ -106,12 +107,11 @@ async def generate_minutes_score(topic: str, discussions: List[str]) -> float:
         return 0.0
 
 
-async def fetch_region_data(region: str, month: int, year: int):
+async def fetch_region_data(region_id: int, month: int, year: int):
     """
     Orchestrates fetching data for all regions (via http_client.get),
     """
 
-    region_id = REGIONS.index(region) + 1
     resp = await http_client.get(
         f"/GetMeetingDetailList?Month={month}&Year={year}&RegionId={region_id}"
     )
@@ -141,10 +141,12 @@ async def calculate_scores(payload: MonthYear) -> List[Dict[str, Any]]:
     results = []
 
     # fetch all regions' raw items
-    regions = REGIONS  # from constants, collect the region list
-    for region in regions:
+    # regions = REGIONS  # from constants, collect the region list
+    for region_id in range(1, 12):
         try:
-            items = await fetch_region_data(region, payload.month, payload.year)
+            region_name = GOVERNORATE_FROM_REGION_ID.get(region_id)
+
+            items = await fetch_region_data(region_id, payload.month, payload.year)
 
             if not items:
                 continue
@@ -180,9 +182,10 @@ async def calculate_scores(payload: MonthYear) -> List[Dict[str, Any]]:
 
             overall = avg_participant_score * PARTICIPANT_WEIGHT + avg_meeting_score * MEETING_WEIGHT + topic_score * TOPIC_WEIGHT
 
+
             reg_result = {
-                "Region": region,
-                "Region_id": await directus_service.get_region_id(region),
+                "Region": region_name,
+                "Region_id": region_id,
                 "month": f"{payload.month}/{payload.year}",
                 "meeting_score": float(f"{avg_meeting_score:.4f}"),
                 "participants_score": float(f"{avg_participant_score:.4f}"),
@@ -194,7 +197,7 @@ async def calculate_scores(payload: MonthYear) -> List[Dict[str, Any]]:
 
             results.append(reg_result)
         except Exception as e:
-            logger.exception("Error computing scores for region %s: %s", region, e)
+            logger.exception("Error computing scores for region %s: %s", region_name, e)
 
     # ranking by total_score
     results.sort(key=lambda x: x["total_score"], reverse=True)

@@ -10,6 +10,8 @@ from typing import List, Dict, Any
 from app.models.lstm_multi import train_and_predict
 from app.services import directus_service
 import logging
+import datetime
+from app.constants.regions import GOVERNORATE_FROM_REGION_ID
 
 logger = logging.getLogger("tanmiya.services.prediction")
 
@@ -22,6 +24,10 @@ async def predict_future_scores() -> List[Dict[str, Any]]:
     """
     # get all items (may need pagination)
     items = await directus_service.get_all_leaderboard_items()
+
+    latest_month = max([datetime.datetime.strptime(item['month'], "%m/%Y") for item in items])
+    next_month = (latest_month + datetime.timedelta(days=31)).replace(day=1).strftime("%m/%Y")
+
     # items is expected as list of dict-like records keyed by date_created and metrics
     predictions = []
 
@@ -32,22 +38,31 @@ async def predict_future_scores() -> List[Dict[str, Any]]:
         regions_map.setdefault(rid, []).append(it)
 
     for region_id, records in regions_map.items():
+        records.sort(key=lambda x: datetime.datetime.strptime(x["month"], "%m/%Y"))
         try:
             # train_and_predict expects records in a list of dicts with "meeting_score" etc
             pred = train_and_predict(records)
+
+            region = GOVERNORATE_FROM_REGION_ID.get(region_id)
+
             out = {
-                "id": region_id,
+                "month": next_month,
                 "Region_id": region_id,
-                "Region": records[0].get("Region"),
-                "meeting_score": float(pred["meeting_score"]),
-                "participants_score": float(pred["participants_score"]),
+                "Region": region,
+                "meeting_score": f"{round(pred['meeting_score'], 2)}",
+                "participants_score": f"{round(pred['participants_score'], 2)}",
                 "total_topics": int(pred["total_topics"]),
                 "transferred_topics": int(pred["transferred_topics"]),
-                "total_score": float(pred["total_score"])
+                "Rank": 0,
+                "total_score": f"{round(float(pred['total_score']), 2)}"
             }
             predictions.append(out)
         except Exception as e:
             logger.exception("Prediction failed for region_id %s: %s", region_id, e)
+
+    predictions.sort(key=lambda x: x["total_score"], reverse=True)
+    for rank, item in enumerate(predictions, start=1):
+        item["Rank"] = rank
 
     # upsert into Directus target collection (Leaderboard_predict)
     try:

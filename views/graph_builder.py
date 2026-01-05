@@ -52,3 +52,38 @@ def build_compare_chart(labels: List[str], latest: List[float], predicted: List[
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
+
+
+async def generate_graphs(actual_data: List[dict], predicted_data: List[dict]) -> dict:
+
+    # ordering region name and score for actual data
+    region_score_actual = []
+    for item in actual_data:
+        region_score_actual.append([item['Region'], item['total_score']])
+
+    # ordering region name and score for predicted data
+    region_score_predicted = {}
+    for item in predicted_data:
+        region_score_predicted[f"{item['Region']}"] = item['total_score']
+
+    regions_ordered = [region_score_actual[i][0] for i in range(0, 11)]
+    scores_actual = [region_score_actual[i][1] for i in range(0, 11)]
+    scores_predicted = []
+
+    for region in regions_ordered:
+        scores_predicted.append(region_score_predicted[f"{region}"])
+
+    bar = {
+        "x": regions_ordered,
+        "y": scores_actual
+    }
+
+    stacked_bar = {
+        "x": regions_ordered,
+        "y": [
+            {"data": scores_actual, "label": "actual"},
+            {"data": scores_predicted, "label": "predicted"}
+        ]
+    }
+
+    return {"bar": bar, "stackedBar": stacked_bar}

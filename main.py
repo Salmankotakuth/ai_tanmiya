@@ -59,6 +59,11 @@ async def healthz():
     return {"status": "ok"}
 
 
+@app.get("/", tags=["Root"])
+async def root():
+    return {"message": "Welcome to the Tanmiya AI Backend API!"}
+
+
 # ---------------------------------------------------------------------
 # Run with: uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 # ---------------------------------------------------------------------

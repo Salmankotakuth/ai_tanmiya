@@ -6,21 +6,24 @@ from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
 
+FEATURE_COLUMNS  = [
+    "meeting_score",
+    "participants_score",
+    "total_topics",
+    "transferred_topics",
+    "total_score"
+]
 
 def preprocess_data(records):
-    """
-    Convert incoming region/month score records into a normalized
-    DataFrame suitable for multi-output LSTM training.
-    """
     df = pd.DataFrame(records)
-    df["date_created"] = pd.to_datetime(df["date_created"])
-    df.set_index("date_created", inplace=True)
 
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled = scaler.fit_transform(df.to_numpy())
+    #  Remove month before scaling
+    df = df[FEATURE_COLUMNS]
 
-    df_scaled = pd.DataFrame(scaled, index=df.index, columns=df.columns)
-    return df_scaled, scaler
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(df.values)
+
+    return scaled, scaler
 
 
 def single_step_sampler(df, window=1):
@@ -30,8 +33,9 @@ def single_step_sampler(df, window=1):
     """
     X, y = [], []
     for i in range(len(df) - window):
-        X.append(df.iloc[i:i+window].values)
-        y.append(df.iloc[i+window].values)
+        X.append(df[i:i + window])
+        y.append(df[i + window])
+
     return np.array(X), np.array(y)
 
 
@@ -68,7 +72,7 @@ def train_and_predict(records):
     model = build_lstm_model((1, X.shape[2]))
     model.fit(X, y, epochs=50)
 
-    last_sequence = df_scaled.iloc[-1:].values.reshape(1, 1, -1)
+    last_sequence = df_scaled[-1:].reshape(1, 1, -1)
     pred = model.predict(last_sequence)
     pred_real = scaler.inverse_transform(pred)[0]
 

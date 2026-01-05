@@ -17,38 +17,48 @@ For now it safely returns a formatted text summary.
 
 import logging
 from typing import Dict, Any
+from openai import OpenAI
 
 logger = logging.getLogger("tanmiya.views.llm_text")
 
+deepseek_key = "lPb1F5Lqd7hhI8t2qczDb9DGQ1z5ds0T"
 
-async def generate_gpt_report(
-    meeting_data: Dict[str, Any],
-    scores: Dict[str, Any],
-    predictions: Dict[str, Any]
-) -> str:
-    """
-    Generate a text report using an LLM.
-    Currently returns a deterministic placeholder summary.
-    """
-    logger.info("LLM report generator called (placeholder implementation).")
+openai = OpenAI(api_key=deepseek_key, base_url="https://api.deepinfra.com/v1/openai")
 
-    meeting_title = meeting_data.get("title", "Untitled Meeting")
-    score_value = scores.get("total_score", "N/A")
-    pred_summary = predictions.get("summary", "No predictions available.")
+async def generate_gpt_report(system_prompt: str, user_prompt: str) -> str:
+    if not user_prompt:
+        return ""
 
-    # Simulated output
-    report_text = f"""
-    === Tanmiya Monthly Report ===
+    # handling string and list inputs
+    if isinstance(system_prompt, str):
+        system_prompt_string = system_prompt
+    else:
+        system_prompt_string = " ".join(system_prompt)
 
-    Meeting: {meeting_title}
+    if isinstance(user_prompt, str):
+        user_prompt_string = user_prompt
+    else:
+        user_prompt_string = " ".join(user_prompt)
 
-    Overall Score: {score_value}
 
-    Executive Prediction Summary:
-    {pred_summary}
+    # system_prompt_string = " ".join(system_prompt)
+    # user_prompt_string = " ".join(user_prompt)
 
-    This is a placeholder LLM output.
-    Replace with actual GPT/LLM API calls when ready.
-    """.strip()
+    completion = openai.chat.completions.create(
+        # model="deepseek-ai/DeepSeek-R1-Turbo",
+        # model="deepseek-ai/DeepSeek-R1",
+        model="openai/gpt-oss-120b",
+        # model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        # model="Qwen/Qwen3-235B-A22B",
 
-    return report_text
+        messages=[
+            {"role": "system", "content": system_prompt_string},
+            {"role": "user", "content": user_prompt_string}
+        ],
+        temperature=0.7   # For reducing the creativity in the gpt prompt and getting similar response each time
+    )
+
+    if completion.choices and completion.choices[0].message:
+        return completion.choices[0].message.content
+    else:
+        return "Error: No response from LLM"
